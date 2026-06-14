@@ -1,9 +1,12 @@
-
 # -*- coding: utf-8 -*-
 import asyncio
 import datetime
+import aiohttp
+import tempfile
+import os
+import logging
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -30,6 +33,16 @@ from keyboards import (
  
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+# ✅ YANGI: Logging sozlamalari - xatolarni bot.log fayliga va konsolga yozadi
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
  
 PHOTO_ID = "https://www.mldspot.com/storage/generated/June2021/movie-theater-audience.jpg"
 ADMIN_USERNAME = "Alisher198711"
@@ -39,7 +52,7 @@ TARIFF_NAMES = {"30": "1 oylik", "90": "3 oylik", "365": "1 yillik"}
  
 TEXTS = {
     "uz": {
-        "welcome":          "👋 Salom {name}!\n\n🎬 Kino kodini yuboring.",
+        "welcome":          "👋 Salom {name}!\n\n🎬 Kerakli kino kodini kiriting.",
         "choose_lang":      "🌐 Tilni tanlang:",
         "lang_set":         "✅ Til o'rnatildi!",
         "must_subscribe":   "📢 Botdan foydalanish uchun quyidagi kanallarga a'zo bo'ling:",
@@ -56,9 +69,10 @@ TEXTS = {
         "already_premium":  "✅ Sizda premium bor!\n📅 Tugash: {expires}",
         "profile":          "👤 <b>Profil</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Tugash: {expires}",
         "premium_expiring": "⚠️ Premium {days} kunda tugaydi! Yangilang.",
+        "enter_code":       "🎬 Yoqtirgan filmingiz kodini kiriting:",
     },
     "ru": {
-        "welcome":          "👋 Привет {name}!\n\n🎬 Отправьте код фильма.",
+        "welcome":          "👋 Привет {name}!\n\n🎬 Введите нужный код фильма.",
         "choose_lang":      "🌐 Выберите язык:",
         "lang_set":         "✅ Язык установлен!",
         "must_subscribe":   "📢 Чтобы пользоваться ботом, подпишитесь на каналы:",
@@ -75,9 +89,10 @@ TEXTS = {
         "already_premium":  "✅ У вас уже есть Premium!\n📅 До: {expires}",
         "profile":          "👤 <b>Профиль</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Истекает: {expires}",
         "premium_expiring": "⚠️ Premium истекает через {days} дней! Обновите.",
+        "enter_code":       "🎬 Введите код понравившегося фильма:",
     },
     "en": {
-        "welcome":          "👋 Hello {name}!\n\n🎬 Send a movie code.",
+        "welcome":          "👋 Hello {name}!\n\n🎬 Enter the required movie code.",
         "choose_lang":      "🌐 Choose your language:",
         "lang_set":         "✅ Language set!",
         "must_subscribe":   "📢 Please subscribe to the channels to use the bot:",
@@ -94,12 +109,14 @@ TEXTS = {
         "already_premium":  "✅ You already have Premium!\n📅 Expires: {expires}",
         "profile":          "👤 <b>Profile</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Expires: {expires}",
         "premium_expiring": "⚠️ Premium expires in {days} days! Please renew.",
+        "enter_code":       "🎬 Enter the code of your favorite movie:",
     },
 }
  
 ADMIN_BTNS = [
     "📊 Statistika", "🎬 Kino qo'shish",
-    "👥 Obuna statistikasi", "📋 Kinolar ro'yxati", "📢 E'lon berish"
+    "👥 Obuna statistikasi", "📋 Kinolar ro'yxati", "📢 E'lon berish",
+    "📦 Yuklangan kinolar"
 ]
 USER_BTNS = ["💎 Premium", "💎 Премиум", "👤 Profil", "👤 Профиль", "👤 Profile"]
  
@@ -111,7 +128,6 @@ def is_admin(user_id):
     return user_id in ADMINS
  
 async def check_subscription(user_id):
-    """True qaytaradi agar barcha kanallarga obuna bo'lsa"""
     try:
         for ch in CHANNELS:
             m = await bot.get_chat_member(ch, user_id)
@@ -122,7 +138,6 @@ async def check_subscription(user_id):
         return False
  
 async def get_unsubscribed_channels(user_id):
-    """Obuna bo'lmagan kanallar ro'yxatini qaytaradi"""
     unsubbed = []
     for ch in CHANNELS:
         try:
@@ -133,19 +148,68 @@ async def get_unsubscribed_channels(user_id):
             unsubbed.append(ch)
     return unsubbed
  
+# ✅ TUZATILDI: foto xabarga edit_text ishlamaydi
 async def show_vip_offer(target, lang, name=None):
-    """Premium taklif xabarini yuborish yoki tahrirlash"""
     text = t(lang, "vip_offer")
     kb = vip_offer_kb(lang, ADMIN_USERNAME)
     if isinstance(target, CallbackQuery):
-        await target.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        try:
+            await target.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            try:
+                await target.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await bot.send_message(target.from_user.id, text, reply_markup=kb, parse_mode="HTML")
         await target.answer()
     else:
         await target.answer(text, reply_markup=kb, parse_mode="HTML")
  
-# ═══════════════════════════════════════════════════════════════
-#  /start
-# ═══════════════════════════════════════════════════════════════
+# ✅ YANGI: URL dan video yuklab Telegramga joylash
+async def download_and_upload_video(message: Message, url: str):
+    status_msg = await message.answer("⏳ Video yuklanmoqda, kuting...")
+    tmp_path = None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+                if resp.status != 200:
+                    await status_msg.edit_text(f"❌ Yuklab bo'lmadi. Server javobi: {resp.status}")
+                    return
+                content_type = resp.headers.get("Content-Type", "")
+                if "video" not in content_type and not url.lower().endswith((".mp4", ".mkv", ".avi", ".mov")):
+                    await status_msg.edit_text("❌ Bu havola video fayl emas.")
+                    return
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                    tmp_path = tmp.name
+                    downloaded = 0
+                    async for chunk in resp.content.iter_chunked(1024 * 1024):
+                        tmp.write(chunk)
+                        downloaded += len(chunk)
+ 
+        await status_msg.edit_text(
+            f"✅ Yuklandi ({downloaded // 1024 // 1024} MB)\n⏳ Telegramga jo'natilmoqda..."
+        )
+        video_file = FSInputFile(tmp_path, filename="video.mp4")
+        sent = await message.answer_video(
+            video=video_file,
+            caption="📎 URL dan yuklandi. Endi /add orqali bazaga qo'shing."
+        )
+        await status_msg.edit_text(
+            f"✅ Video Telegramga yuklandi!\n\n"
+            f"📋 <b>file_id:</b>\n<code>{sent.video.file_id}</code>\n\n"
+            f"Endi /add bosib, shu videoni forward qiling yoki file_id ni nusxalab ishlating.",
+            parse_mode="HTML"
+        )
+    except asyncio.TimeoutError:
+        await status_msg.edit_text("❌ Vaqt tugadi. Video juda katta yoki server sekin.")
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Xato: {str(e)[:200]}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+ 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
@@ -159,73 +223,46 @@ async def start(message: Message, state: FSMContext):
     else:
         await message.answer(t("uz", "choose_lang"), reply_markup=lang_kb())
  
-# ═══════════════════════════════════════════════════════════════
-#  TIL TANLASH → KANAL OBUNASI TEKSHIRUVI
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data.startswith("lang:"))
 async def set_lang(call: CallbackQuery, state: FSMContext):
     lang = call.data.split(":")[1]
     user_id = call.from_user.id
     await set_user_lang(user_id, lang)
     name = call.from_user.first_name
- 
-    # Til tanlash xabarini yangilaymiz
     await call.message.edit_caption(caption=t(lang, "welcome", name=name))
     await call.answer(t(lang, "lang_set"))
- 
     if is_admin(user_id):
-        await bot.send_message(user_id, "✅", reply_markup=admin_main_kb())
+        await bot.send_message(user_id, t(lang, "enter_code"), reply_markup=admin_main_kb())
         return
- 
-    # Foydalanuvchi: kanal obunasini tekshir
     kb = user_main_kb(lang)
-    await bot.send_message(user_id, "✅", reply_markup=kb)
- 
+    await bot.send_message(user_id, t(lang, "enter_code"), reply_markup=kb)
     if not await check_subscription(user_id):
-        # Kanallarga obuna bo'lish kerak
         await bot.send_message(
             user_id,
             t(lang, "must_subscribe"),
             reply_markup=sub_channels_kb(CHANNELS, lang)
         )
-    else:
-        # Obuna bor → Premium taklif
-        await show_vip_offer(call, lang, name)
  
-# ═══════════════════════════════════════════════════════════════
-#  KANAL OBUNASINI TEKSHIRISH (tugmadan)
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data == "check_channels")
 async def check_channels_cb(call: CallbackQuery):
     user_id = call.from_user.id
     lang = await get_user_lang(user_id)
- 
-    # Qaysi kanallarga obuna bo'lmagan — tekshir
     unsubbed = await get_unsubscribed_channels(user_id)
- 
     if unsubbed:
-        # Hali obuna bo'lmagan kanallar bor — faqat shularni ko'rsat
         await call.answer(t(lang, "not_member"), show_alert=True)
         await call.message.edit_text(
             t(lang, "must_subscribe"),
             reply_markup=sub_channels_kb(unsubbed, lang)
         )
         return
- 
-    # Barcha kanallarga obuna bo'ldi → kino kodi kiritishga yo'naltir
     await call.answer()
     name = call.from_user.first_name
     await call.message.edit_text(t(lang, "welcome", name=name))
  
-# ═══════════════════════════════════════════════════════════════
-#  RASM HANDLER
-# ═══════════════════════════════════════════════════════════════
 @dp.message(F.photo)
 async def photo_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     current_state = await state.get_state()
- 
-    # E'lon berish
     if current_state == Broadcast.waiting_content.state:
         await state.update_data(
             content_type="photo",
@@ -238,8 +275,6 @@ async def photo_handler(message: Message, state: FSMContext):
             reply_markup=broadcast_confirm_kb()
         )
         return
- 
-    # Premium chek
     if current_state == Premium.sending_check.state:
         lang = await get_user_lang(user_id)
         data = await state.get_data()
@@ -248,7 +283,6 @@ async def photo_handler(message: Message, state: FSMContext):
         photo_file_id = message.photo[-1].file_id
         payment_id = await save_payment(user_id, photo_file_id, tariff_key)
         tariff_name = TARIFF_NAMES.get(tariff_key, tariff_key)
- 
         for admin_id in ADMINS:
             try:
                 await bot.send_photo(
@@ -266,24 +300,16 @@ async def photo_handler(message: Message, state: FSMContext):
                 )
             except Exception:
                 pass
- 
         await state.clear()
         await message.answer(t(lang, "check_received"))
         return
- 
-    # Admin foto ID
     if is_admin(user_id):
         await message.answer(f"`{message.photo[-1].file_id}`")
  
-# ═══════════════════════════════════════════════════════════════
-#  FAYL (DOCUMENT) HANDLER — premium chek fayl sifatida kelganda
-# ═══════════════════════════════════════════════════════════════
 @dp.message(F.document)
 async def document_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     current_state = await state.get_state()
-
-    # E'lon berish
     if current_state == Broadcast.waiting_content.state:
         await state.update_data(
             content_type="document",
@@ -296,8 +322,6 @@ async def document_handler(message: Message, state: FSMContext):
             reply_markup=broadcast_confirm_kb()
         )
         return
-
-    # Premium chek — fayl sifatida yuborilgan
     if current_state == Premium.sending_check.state:
         lang = await get_user_lang(user_id)
         data = await state.get_data()
@@ -306,7 +330,6 @@ async def document_handler(message: Message, state: FSMContext):
         doc_file_id = message.document.file_id
         payment_id = await save_payment(user_id, doc_file_id, tariff_key)
         tariff_name = TARIFF_NAMES.get(tariff_key, tariff_key)
-
         for admin_id in ADMINS:
             try:
                 await bot.send_document(
@@ -324,18 +347,12 @@ async def document_handler(message: Message, state: FSMContext):
                 )
             except Exception:
                 pass
-
         await state.clear()
         await message.answer(t(lang, "check_received"))
         return
-
-    # Admin fayl ID
     if is_admin(user_id):
         await message.answer(f"`{message.document.file_id}`")
-
-# ═══════════════════════════════════════════════════════════════
-#  STATISTIKA
-# ═══════════════════════════════════════════════════════════════
+ 
 async def send_stats(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -361,9 +378,6 @@ async def stats_btn(message: Message):
 async def stats_cmd(message: Message):
     await send_stats(message)
  
-# ═══════════════════════════════════════════════════════════════
-#  OBUNA STATISTIKASI
-# ═══════════════════════════════════════════════════════════════
 @dp.message(F.text == "👥 Obuna statistikasi")
 async def subscription_stats_btn(message: Message):
     if not is_admin(message.from_user.id):
@@ -383,9 +397,6 @@ async def subscription_stats_btn(message: Message):
         text += f"• {ch} — <b>{cnt}</b> ta\n"
     await message.answer(text, parse_mode="HTML")
  
-# ═══════════════════════════════════════════════════════════════
-#  KINO QO'SHISH
-# ═══════════════════════════════════════════════════════════════
 async def start_add(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
@@ -437,17 +448,20 @@ async def cancel_add(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("❌ Bekor qilindi.")
     await call.answer()
  
+# ✅ TUZATILDI: state yo'qolgan bo'lsa xato chiqmaydi
 @dp.callback_query(F.data == "save")
 async def save_add(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    await upsert_movie(code=data["code"], caption=data.get("caption",""), file_id=data["file_id"])
+    if "code" not in data or "file_id" not in data:
+        await state.clear()
+        await call.message.edit_text("❌ Xato: ma'lumot yo'qoldi. Qaytadan boshlang /add")
+        await call.answer()
+        return
+    await upsert_movie(code=data["code"], caption=data.get("caption", ""), file_id=data["file_id"])
     await state.clear()
     await call.message.edit_text("✅ Saqlandi!")
     await call.answer()
  
-# ═══════════════════════════════════════════════════════════════
-#  KINOLAR RO'YXATI
-# ═══════════════════════════════════════════════════════════════
 @dp.message(F.text == "📋 Kinolar ro'yxati")
 async def movies_list(message: Message):
     if not is_admin(message.from_user.id):
@@ -456,7 +470,7 @@ async def movies_list(message: Message):
     if not rows:
         await message.answer("🎬 Hali kino yo'q.")
         return
-    for code, caption in rows:
+    for code, caption, created_at in rows:
         name = caption if caption and caption != "—" else "(caption yo'q)"
         await message.answer(
             f"🎬 Kod: <code>{code}</code>\n📝 {name}",
@@ -473,9 +487,32 @@ async def delete_movie_cb(call: CallbackQuery):
     await call.message.edit_text(f"🗑 Kod <code>{code}</code> o'chirildi.", parse_mode="HTML")
     await call.answer("O'chirildi!")
  
-# ═══════════════════════════════════════════════════════════════
-#  E'LON BERISH
-# ═══════════════════════════════════════════════════════════════
+# ✅ YANGI: Yuklangan kinolarning umumiy ro'yxati (tartib raqami + kod + yuklangan vaqt)
+@dp.message(F.text == "📦 Yuklangan kinolar")
+async def uploaded_movies_summary(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    rows = await get_all_movies()
+    if not rows:
+        await message.answer("🎬 Hali kino yo'q.")
+        return
+ 
+    header = f"🎬 <b>Yuklangan kinolar:</b> {len(rows)} ta\n\n"
+    lines = []
+    for i, (code, caption, created_at) in enumerate(rows, 1):
+        when = created_at if created_at else "—"
+        lines.append(f"{i} - kod {code} | {when}")
+ 
+    # Telegram xabar limiti ~4096 belgi, shu sababli bo'lib yuboramiz
+    chunk = header
+    for line in lines:
+        if len(chunk) + len(line) + 1 > 4000:
+            await message.answer(chunk, parse_mode="HTML")
+            chunk = ""
+        chunk += line + "\n"
+    if chunk.strip():
+        await message.answer(chunk, parse_mode="HTML")
+ 
 @dp.message(F.text == "📢 E'lon berish")
 async def broadcast_start(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
@@ -531,9 +568,6 @@ async def broadcast_send(call: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
  
-# ═══════════════════════════════════════════════════════════════
-#  TO'LOV TASDIQLASH (admin)
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data.startswith("pay_ok:"))
 async def payment_approve(call: CallbackQuery):
     if not is_admin(call.from_user.id):
@@ -592,9 +626,6 @@ async def payment_reject(call: CallbackQuery):
         )
     await call.answer("❌ Rad etildi!")
  
-# ═══════════════════════════════════════════════════════════════
-#  PREMIUM — SOTIB OLISH TUGMASI
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data == "buy_premium")
 async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
@@ -613,9 +644,6 @@ async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     )
     await call.answer()
  
-# ═══════════════════════════════════════════════════════════════
-#  PREMIUM — TARIF TANLASH
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data.startswith("tariff:"))
 async def choose_tariff(call: CallbackQuery, state: FSMContext):
     _, days, price = call.data.split(":")
@@ -630,9 +658,6 @@ async def choose_tariff(call: CallbackQuery, state: FSMContext):
     )
     await call.answer()
  
-# ═══════════════════════════════════════════════════════════════
-#  TO'LOV QILDIM TUGMASI
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data == "i_paid")
 async def i_paid_cb(call: CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
@@ -641,9 +666,6 @@ async def i_paid_cb(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(t(lang, "send_check"))
     await call.answer()
  
-# ═══════════════════════════════════════════════════════════════
-#  ORQAGA TUGMALARI
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data == "back_to_channels")
 async def back_to_channels(call: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -676,9 +698,6 @@ async def back_to_tariffs(call: CallbackQuery, state: FSMContext):
     )
     await call.answer()
  
-# ═══════════════════════════════════════════════════════════════
-#  PREMIUM TUGMASI (reply keyboard)
-# ═══════════════════════════════════════════════════════════════
 @dp.message(F.text.in_(["💎 Premium", "💎 Премиум"]))
 async def premium_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -691,9 +710,6 @@ async def premium_menu(message: Message, state: FSMContext):
     await state.set_state(Premium.choosing_tariff)
     await message.answer(t(lang, "premium_info"), reply_markup=tariff_back_kb(lang), parse_mode="HTML")
  
-# ═══════════════════════════════════════════════════════════════
-#  PROFIL
-# ═══════════════════════════════════════════════════════════════
 @dp.message(F.text.in_(["👤 Profil", "👤 Профиль", "👤 Profile"]))
 async def profile_menu(message: Message):
     user_id = message.from_user.id
@@ -708,19 +724,28 @@ async def profile_menu(message: Message):
         parse_mode="HTML"
     )
  
-# ═══════════════════════════════════════════════════════════════
-#  KINO SO'RASH
-# ═══════════════════════════════════════════════════════════════
+# ✅ YANGI: Admin http:// havola yuborganda video yuklab oladi
+@dp.message(F.text & F.text.startswith("http"))
+async def handle_url(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    url = message.text.strip()
+    if any(url.lower().endswith(ext) for ext in (".mp4", ".mkv", ".avi", ".mov")):
+        await download_and_upload_video(message, url)
+    else:
+        await message.answer(
+            "⚠️ Faqat to'g'ridan-to'g'ri video havolalar ishlaydi.\n\n"
+            "Masalan: <code>https://fayllar1.ru/video.mp4</code>",
+            parse_mode="HTML"
+        )
+ 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def user_get_movie(message: Message):
     user_id = message.from_user.id
     code = message.text.strip()
- 
     if code in ADMIN_BTNS or code in USER_BTNS:
         return
- 
     lang = await get_user_lang(user_id)
- 
     if not await is_premium(user_id):
         if not await check_subscription(user_id):
             await message.answer(
@@ -728,43 +753,32 @@ async def user_get_movie(message: Message):
                 reply_markup=sub_channels_kb(CHANNELS, lang)
             )
             return
- 
     row = await db_get_movie(code)
     if not row:
         await message.answer(t(lang, "not_found"))
         return
- 
     _, caption, file_id = row
     await log_usage(user_id, code)
-    await message.answer_video(video=file_id, caption=caption or "")
+    await message.answer_video(video=file_id, caption=caption or "", protect_content=True)
  
-# ═══════════════════════════════════════════════════════════════
-#  OBUNA TEKSHIRISH — kod kiritib keyin tekshirish
-# ═══════════════════════════════════════════════════════════════
 @dp.callback_query(F.data.startswith("check_sub:"))
 async def check_sub_callback(call: CallbackQuery):
     user_id = call.from_user.id
     code = call.data.split(":")[1]
     lang = await get_user_lang(user_id)
- 
     if not await check_subscription(user_id):
         await call.answer(t(lang, "not_member"), show_alert=True)
         return
- 
     row = await db_get_movie(code)
     if not row:
         await call.message.edit_text(t(lang, "not_found"))
         return
- 
     _, caption, file_id = row
     await log_usage(user_id, code)
     await call.message.delete()
-    await bot.send_video(chat_id=user_id, video=file_id, caption=caption or "")
+    await bot.send_video(chat_id=user_id, video=file_id, caption=caption or "", protect_content=True)
     await call.answer()
  
-# ═══════════════════════════════════════════════════════════════
-#  SCHEDULER
-# ═══════════════════════════════════════════════════════════════
 async def check_expiring_premiums():
     while True:
         await asyncio.sleep(86400)
@@ -776,14 +790,20 @@ async def check_expiring_premiums():
             except Exception:
                 pass
  
-# ═══════════════════════════════════════════════════════════════
-#  MAIN
-# ═══════════════════════════════════════════════════════════════
 async def main():
     await init_db()
     asyncio.create_task(check_expiring_premiums())
-    print("Bot ishga tushdi")
-    await dp.start_polling(bot)
+    logging.info("Bot ishga tushdi")
+
+    # ✅ YANGI: Agar polling biror sababdan to'xtab qolsa, bot avtomatik qayta ishga tushadi
+    while True:
+        try:
+            await dp.start_polling(bot)
+        except Exception as e:
+            logging.error(f"Bot xato bilan to'xtadi: {e}")
+            await asyncio.sleep(5)
+            logging.info("Bot qayta ishga tushyapti...")
+
  
 if __name__ == "__main__":
     asyncio.run(main())
