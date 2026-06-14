@@ -5,8 +5,9 @@ import aiohttp
 import tempfile
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -35,14 +36,20 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 # ✅ YANGI: Logging sozlamalari - xatolarni bot.log fayliga va konsolga yozadi
+# RotatingFileHandler: fayl 5MB'dan oshsa, eski qismi avtomatik o'chiriladi (disk to'lib qolmaydi)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("bot.log", encoding="utf-8"),
+        RotatingFileHandler("bot.log", maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
+
+# ✅ YANGI: aiogram har bir update uchun "Update id=... is handled" deb yozadi -
+# foydalanuvchi ko'paygach bu loglar juda ko'p bo'lib ketadi, shuning uchun o'chiramiz.
+# Faqat xatoliklar (ERROR) ko'rsatiladi.
+logging.getLogger("aiogram.event").setLevel(logging.WARNING)
  
 PHOTO_ID = "https://www.mldspot.com/storage/generated/June2021/movie-theater-audience.jpg"
 ADMIN_USERNAME = "Alisher198711"
@@ -70,6 +77,7 @@ TEXTS = {
         "profile":          "👤 <b>Profil</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Tugash: {expires}",
         "premium_expiring": "⚠️ Premium {days} kunda tugaydi! Yangilang.",
         "enter_code":       "🎬 Yoqtirgan filmingiz kodini kiriting:",
+        "contact_admin":    "📞 Adminga bog'lanish",
     },
     "ru": {
         "welcome":          "👋 Привет {name}!\n\n🎬 Введите нужный код фильма.",
@@ -90,6 +98,7 @@ TEXTS = {
         "profile":          "👤 <b>Профиль</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Истекает: {expires}",
         "premium_expiring": "⚠️ Premium истекает через {days} дней! Обновите.",
         "enter_code":       "🎬 Введите код понравившегося фильма:",
+        "contact_admin":    "📞 Связаться с админом",
     },
     "en": {
         "welcome":          "👋 Hello {name}!\n\n🎬 Enter the required movie code.",
@@ -110,6 +119,7 @@ TEXTS = {
         "profile":          "👤 <b>Profile</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Expires: {expires}",
         "premium_expiring": "⚠️ Premium expires in {days} days! Please renew.",
         "enter_code":       "🎬 Enter the code of your favorite movie:",
+        "contact_admin":    "📞 Contact admin",
     },
 }
  
@@ -500,7 +510,15 @@ async def uploaded_movies_summary(message: Message):
     header = f"🎬 <b>Yuklangan kinolar:</b> {len(rows)} ta\n\n"
     lines = []
     for i, (code, caption, created_at) in enumerate(rows, 1):
-        when = created_at if created_at else "—"
+        when = "—"
+        if created_at:
+            # ✅ TUZATILDI: bazadagi vaqt UTC bo'yicha saqlanadi, O'zbekiston vaqtiga (+5) o'tkazamiz
+            try:
+                dt_obj = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                dt_obj += datetime.timedelta(hours=5)
+                when = dt_obj.strftime("%Y-%m-%d %H:%M")
+            except (ValueError, TypeError):
+                when = created_at
         lines.append(f"{i} - kod {code} | {when}")
  
     # Telegram xabar limiti ~4096 belgi, shu sababli bo'lib yuboramiz
@@ -610,8 +628,12 @@ async def payment_reject(call: CallbackQuery):
     payment_id, user_id = int(payment_id), int(user_id)
     await update_payment_status(payment_id, "rejected")
     lang = await get_user_lang(user_id)
+    # ✅ YANGI: to'lov rad etilganda, foydalanuvchi adminga bog'lanishi uchun tugma
+    contact_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "contact_admin"), url=f"https://t.me/{ADMIN_USERNAME}")]
+    ])
     try:
-        await bot.send_message(user_id, t(lang, "premium_rejected"))
+        await bot.send_message(user_id, t(lang, "premium_rejected"), reply_markup=contact_kb)
     except Exception:
         pass
     try:
