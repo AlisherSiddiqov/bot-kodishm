@@ -112,4 +112,3 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="✅ Yuborish", callback_data="broadcast_send"),
         InlineKeyboardButton(text="❌ Bekor",    callback_data="broadcast_cancel"),
     ]])
- 
