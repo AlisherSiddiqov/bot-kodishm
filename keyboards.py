@@ -11,7 +11,6 @@ def admin_main_kb():
             [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="🎬 Kino qo'shish")],
             [KeyboardButton(text="📋 Kinolar ro'yxati"), KeyboardButton(text="📢 E'lon berish")],
             [KeyboardButton(text="👥 Obuna statistikasi")],
-            [KeyboardButton(text="🧪 TEST")],
         ],
         resize_keyboard=True
     )
@@ -113,3 +112,4 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="✅ Yuborish", callback_data="broadcast_send"),
         InlineKeyboardButton(text="❌ Bekor",    callback_data="broadcast_cancel"),
     ]])
+ 
