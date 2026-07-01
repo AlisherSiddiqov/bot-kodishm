@@ -70,7 +70,7 @@ TEXTS = {
         "already_premium":  "✅ Sizda premium bor!\n📅 Tugash: {expires}",
         "profile":          "👤 <b>Profil</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Tugash: {expires}",
         "premium_expiring": "⚠️ Premium {days} kunda tugaydi! Yangilang.",
-        "enter_code":       "🎬 Yoqtirgan filmingiz kodini kiriting:",
+
         "contact_admin":    "📞 Adminga bog'lanish",
     },
     "ru": {
@@ -91,7 +91,7 @@ TEXTS = {
         "already_premium":  "✅ У вас уже есть Premium!\n📅 До: {expires}",
         "profile":          "👤 <b>Профиль</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Истекает: {expires}",
         "premium_expiring": "⚠️ Premium истекает через {days} дней! Обновите.",
-        "enter_code":       "🎬 Введите код понравившегося фильма:",
+      
         "contact_admin":    "📞 Связаться с админом",
     },
     "en": {
@@ -112,7 +112,7 @@ TEXTS = {
         "already_premium":  "✅ You already have Premium!\n📅 Expires: {expires}",
         "profile":          "👤 <b>Profile</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Expires: {expires}",
         "premium_expiring": "⚠️ Premium expires in {days} days! Please renew.",
-        "enter_code":       "🎬 Enter the code of your favorite movie:",
+      
         "contact_admin":    "📞 Contact admin",
     },
 }
