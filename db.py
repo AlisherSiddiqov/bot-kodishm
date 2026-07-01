@@ -1,7 +1,7 @@
 import aiosqlite
- 
+
 DB_PATH = "movies.db"
- 
+
 # ───────────────────────────── INIT ─────────────────────────────
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
@@ -48,38 +48,67 @@ async def init_db():
         try:
             await db.execute("ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'uz'")
         except Exception:
-            pass  # Ustun allaqachon mavjud
+            pass
+        # MIGRATION: movies jadvaliga created_at ustuni qo'shish
+        try:
+            await db.execute("ALTER TABLE movies ADD COLUMN created_at TEXT")
+        except Exception:
+            pass
+        # MIGRATION: users jadvaliga last_movie ustuni qo'shish
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN last_movie TEXT")
+        except Exception:
+            pass
         await db.commit()
- 
+
 # ───────────────────────────── MOVIES ─────────────────────────────
 async def upsert_movie(code: str, caption: str, file_id: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            INSERT INTO movies(code, caption, file_id)
-            VALUES(?, ?, ?)
+            INSERT INTO movies(code, caption, file_id, created_at)
+            VALUES(?, ?, ?, datetime('now'))
             ON CONFLICT(code) DO UPDATE SET
                 caption=excluded.caption,
                 file_id=excluded.file_id
         """, (code, caption, file_id))
         await db.commit()
- 
+
 async def get_movie(code: str):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "SELECT code, caption, file_id FROM movies WHERE code=?", (code,)
         )
         return await cur.fetchone()
- 
+
 async def delete_movie(code: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM movies WHERE code=?", (code,))
         await db.commit()
- 
+
 async def get_all_movies():
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT code, caption FROM movies ORDER BY code")
+        cur = await db.execute(
+            "SELECT code, caption, created_at FROM movies ORDER BY rowid ASC"
+        )
         return await cur.fetchall()
- 
+
+# /start uchun tasodifiy kino tanlash
+async def get_random_movie():
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT code, caption, file_id FROM movies ORDER BY RANDOM() LIMIT 1"
+        )
+        return await cur.fetchone()
+
+# "Kino e'loni" uchun eng oxirgi qo'shilgan kino kodini olish
+async def get_latest_movie_code():
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT code FROM movies ORDER BY rowid DESC LIMIT 1"
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
+
 # ───────────────────────────── USAGE ─────────────────────────────
 async def log_usage(user_id: int, code: str):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -88,7 +117,7 @@ async def log_usage(user_id: int, code: str):
             (user_id, code)
         )
         await db.commit()
- 
+
 async def get_stats():
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
@@ -96,44 +125,45 @@ async def get_stats():
             FROM usage_log
             GROUP BY code
             ORDER BY cnt DESC
-            LIMIT 20
         """)
         return await cur.fetchall()
- 
+
 # ───────────────────────────── USERS ─────────────────────────────
-async def save_user(user_id: int):
+# Yangi foydalanuvchi bo'lsa True, mavjud bo'lsa False qaytaradi
+async def save_user(user_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
+        cur = await db.execute(
             "INSERT OR IGNORE INTO users (user_id, joined_at) VALUES (?, datetime('now'))",
             (user_id,)
         )
         await db.commit()
- 
+        return cur.rowcount > 0
+
 async def get_total_users():
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT COUNT(*) FROM users")
         row = await cur.fetchone()
         return row[0] if row else 0
- 
+
 async def get_subscription_stats():
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT COUNT(*) FROM users")
         row = await cur.fetchone()
         return row[0] if row else 0
- 
+
 async def get_all_user_ids():
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT user_id FROM users")
         rows = await cur.fetchall()
         return [r[0] for r in rows]
- 
+
 async def set_user_lang(user_id: int, lang: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE users SET lang=? WHERE user_id=?", (lang, user_id)
         )
         await db.commit()
- 
+
 async def get_user_lang(user_id: int) -> str:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
@@ -141,7 +171,30 @@ async def get_user_lang(user_id: int) -> str:
         )
         row = await cur.fetchone()
         return row[0] if row else "uz"
- 
+
+# Foydalanuvchi oxirgi ko'rgan kino kodini saqlash
+async def set_last_movie(user_id: int, code: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET last_movie=? WHERE user_id=?", (code, user_id)
+        )
+        await db.commit()
+
+# Foydalanuvchi oxirgi ko'rgan kino kodini olish
+async def get_last_movie(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT last_movie FROM users WHERE user_id=?", (user_id,)
+        )
+        row = await cur.fetchone()
+        return row[0] if row and row[0] else None
+
+# TEST uchun - foydalanuvchini bazadan o'chirish (yana "yangi" bo'ladi)
+async def delete_user(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+        await db.commit()
+
 # ───────────────────────────── PREMIUM ─────────────────────────────
 async def set_premium(user_id: int, days: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -153,7 +206,7 @@ async def set_premium(user_id: int, days: int):
                 activated_at = datetime('now')
         """, (user_id, f"+{days} days", f"+{days} days"))
         await db.commit()
- 
+
 async def is_premium(user_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
@@ -161,7 +214,7 @@ async def is_premium(user_id: int) -> bool:
             WHERE user_id=? AND expires_at > datetime('now')
         """, (user_id,))
         return await cur.fetchone() is not None
- 
+
 async def get_premium_info(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
@@ -169,7 +222,7 @@ async def get_premium_info(user_id: int):
             WHERE user_id=? AND expires_at > datetime('now')
         """, (user_id,))
         return await cur.fetchone()
- 
+
 async def get_expiring_premium(days: int = 3):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
@@ -178,7 +231,7 @@ async def get_expiring_premium(days: int = 3):
               AND expires_at <= datetime('now', ?)
         """, (f"+{days} days",))
         return await cur.fetchall()
- 
+
 async def get_premium_count():
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
@@ -187,7 +240,7 @@ async def get_premium_count():
         """)
         row = await cur.fetchone()
         return row[0] if row else 0
- 
+
 # ───────────────────────────── PAYMENTS ─────────────────────────────
 async def save_payment(user_id: int, photo_file_id: str, tariff: str) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -197,7 +250,7 @@ async def save_payment(user_id: int, photo_file_id: str, tariff: str) -> int:
         """, (user_id, photo_file_id, tariff))
         await db.commit()
         return cur.lastrowid
- 
+
 async def get_payment(payment_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
@@ -205,7 +258,7 @@ async def get_payment(payment_id: int):
             (payment_id,)
         )
         return await cur.fetchone()
- 
+
 async def update_payment_status(payment_id: int, status: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
