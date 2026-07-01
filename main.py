@@ -242,7 +242,6 @@ async def set_lang(call: CallbackQuery, state: FSMContext):
     await call.message.edit_caption(caption=t(lang, "welcome", name=name))
     await call.answer(t(lang, "lang_set"))
     kb = user_main_kb(lang)
-    await bot.send_message(user_id, t(lang, "enter_code"), reply_markup=kb)
     if not await check_subscription(user_id):
         await bot.send_message(
             user_id,
