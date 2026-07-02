@@ -582,18 +582,10 @@ async def broadcast_type_selected(call: CallbackQuery, state: FSMContext):
     await state.update_data(broadcast_type=btype)
     if btype == "movie":
         await state.set_state(Broadcast.waiting_content)
-        await call.message.edit_text(
-            "🎬 Kino e'loni uchun:
-
-'Rasm yoki qisqa video yuboriring, caption yozing.'"
-        )
+        await call.message.edit_text("🎬 Kino eloni: Rasm yoki video yuboriring, caption yozing.")
     else:
         await state.set_state(Broadcast.waiting_content)
-        await call.message.edit_text(
-            "🛍️ Mahsulot e'loni uchun:
-
-Matn, rasm yoki video yuboriring."
-        )
+        await call.message.edit_text("Mahsulot eloni: Matn, rasm yoki video yuboriring.")
     await call.answer()
 
 # ✅ Kino e'lonida - kino kodini so'rash
@@ -616,12 +608,7 @@ async def broadcast_movie_code(message: Message, state: FSMContext):
     _, caption, file_id = row
     await state.update_data(movie_code=code, movie_caption=caption, movie_file_id=file_id)
     await state.set_state(Broadcast.confirm)
-    await message.answer(
-        f"✅ Kino topildi! Kod: {code}
-
-Barcha foydalanuvchilarga e'lon + 'Filmni ko'rish' tugmasi bilan yuboriladmi?",
-        reply_markup=broadcast_confirm_kb()
-    )
+    await message.answer(f"Kino topildi! Kod: {code}. Barcha foydalanuvchilarga yuborilsinmi?", reply_markup=broadcast_confirm_kb())
 
 # ✅ Filmni ko'rish tugmasi bosilganda
 @dp.callback_query(F.data.startswith("watch:"))
