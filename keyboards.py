@@ -3,18 +3,18 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton
 )
- 
+
 # ─── ADMIN ───────────────────────────────────────────────────
 def admin_main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="🎬 Kino qo'shish")],
             [KeyboardButton(text="📋 Kinolar ro'yxati"), KeyboardButton(text="📢 E'lon berish")],
-            [KeyboardButton(text="👥 Obuna statistikasi")],
+            [KeyboardButton(text="📦 Yuklangan kinolar"), KeyboardButton(text="👥 Obuna statistikasi")],
         ],
         resize_keyboard=True
     )
- 
+
 # ─── USER ────────────────────────────────────────────────────
 def user_main_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
     texts = {
@@ -26,7 +26,7 @@ def user_main_kb(lang: str = "uz") -> ReplyKeyboardMarkup:
         keyboard=[[KeyboardButton(text=t) for t in row] for row in texts.get(lang, texts["uz"])],
         resize_keyboard=True
     )
- 
+
 # ─── TIL TANLASH ─────────────────────────────────────────────
 def lang_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -36,7 +36,7 @@ def lang_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🇬🇧 English",  callback_data="lang:en"),
         ]
     ])
- 
+
 # ─── KANAL OBUNASI ────────────────────────────────────────────
 def sub_channels_kb(channels: list, lang: str = "uz") -> InlineKeyboardMarkup:
     btn  = {"uz": "+ Obuna bo'lish",          "ru": "+ Podpisatsya",  "en": "+ Subscribe"}
@@ -53,7 +53,7 @@ def sub_channels_kb(channels: list, lang: str = "uz") -> InlineKeyboardMarkup:
         callback_data="check_channels"
     )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
- 
+
 # ─── VIP TAKLIF ───────────────────────────────────────────────
 def vip_offer_kb(lang: str = "uz", admin_username: str = "") -> InlineKeyboardMarkup:
     buy  = {"uz": "💎 SOTIB OLISH",  "ru": "💎 КУПИТЬ",  "en": "💎 BUY NOW"}
@@ -63,7 +63,7 @@ def vip_offer_kb(lang: str = "uz", admin_username: str = "") -> InlineKeyboardMa
         [InlineKeyboardButton(text=back.get(lang, back["uz"]), callback_data="back_to_channels")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
- 
+
 # ─── TARIF TANLASH + ORQAGA ───────────────────────────────────
 def tariff_back_kb(lang: str = "uz") -> InlineKeyboardMarkup:
     back = {"uz": "◀️ Orqaga", "ru": "◀️ Назад", "en": "◀️ Back"}
@@ -73,7 +73,7 @@ def tariff_back_kb(lang: str = "uz") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="1 yillik — 50 000 so'm", callback_data="tariff:365:50000")],
         [InlineKeyboardButton(text=back.get(lang, back["uz"]), callback_data="back_to_vip")],
     ])
- 
+
 # ─── TO'LOV SAHIFASI ──────────────────────────────────────────
 def payment_kb(lang: str = "uz", admin_username: str = "") -> InlineKeyboardMarkup:
     paid = {"uz": "✅ To'lov qildim",  "ru": "✅ Я оплатил",  "en": "✅ I paid"}
@@ -85,30 +85,48 @@ def payment_kb(lang: str = "uz", admin_username: str = "") -> InlineKeyboardMark
         )],
         [InlineKeyboardButton(text=back.get(lang, back["uz"]), callback_data="back_to_tariffs")],
     ])
- 
+
 # ─── SAQLASH / BEKOR ──────────────────────────────────────────
 def save_cancel_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Saqlash",       callback_data="save"),
         InlineKeyboardButton(text="❌ Bekor qilish",  callback_data="cancel"),
     ]])
- 
+
 # ─── ADMIN: CHEK TASDIQLASH ───────────────────────────────────
 def payment_confirm_kb(payment_id: int, user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"pay_ok:{payment_id}:{user_id}"),
         InlineKeyboardButton(text="❌ Rad etish",  callback_data=f"pay_no:{payment_id}:{user_id}"),
     ]])
- 
+
 # ─── KINO O'CHIRISH ───────────────────────────────────────────
 def movie_delete_kb(code: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"del_movie:{code}")
     ]])
- 
+
+# ─── E'LON TURI TANLASH ───────────────────────────────────────
+def broadcast_type_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎬 Kino e'loni",     callback_data="broadcast_type:movie")],
+        [InlineKeyboardButton(text="🛍️ Mahsulot e'loni", callback_data="broadcast_type:product")],
+        [InlineKeyboardButton(text="❌ Bekor",            callback_data="broadcast_cancel")],
+    ])
+
 # ─── E'LON TASDIQLASH ─────────────────────────────────────────
 def broadcast_confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Yuborish", callback_data="broadcast_send"),
         InlineKeyboardButton(text="❌ Bekor",    callback_data="broadcast_cancel"),
+    ]])
+
+# ─── FILMNI KO'RISH TUGMASI ───────────────────────────────────
+def watch_movie_kb(code: str, lang: str = "uz") -> InlineKeyboardMarkup:
+    texts = {"uz": "🎬 Filmni ko'rish", "ru": "🎬 Смотреть фильм", "en": "🎬 Watch movie"}
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=texts.get(lang, texts["uz"]),
+            callback_data=f"watch:{code}"
+        )
     ]])
