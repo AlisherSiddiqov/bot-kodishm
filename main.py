@@ -28,6 +28,7 @@ from keyboards import (
     admin_main_kb, user_main_kb, lang_kb,
     save_cancel_kb, payment_confirm_kb,
     movie_delete_kb, broadcast_confirm_kb,
+    broadcast_type_kb, watch_movie_kb,
     sub_channels_kb, vip_offer_kb,
     tariff_back_kb, payment_kb
 )
@@ -70,7 +71,7 @@ TEXTS = {
         "already_premium":  "✅ Sizda premium bor!\n📅 Tugash: {expires}",
         "profile":          "👤 <b>Profil</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Tugash: {expires}",
         "premium_expiring": "⚠️ Premium {days} kunda tugaydi! Yangilang.",
-
+        "enter_code":       "🎬 Yoqtirgan filmingiz kodini kiriting:",
         "contact_admin":    "📞 Adminga bog'lanish",
     },
     "ru": {
@@ -91,7 +92,7 @@ TEXTS = {
         "already_premium":  "✅ У вас уже есть Premium!\n📅 До: {expires}",
         "profile":          "👤 <b>Профиль</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Истекает: {expires}",
         "premium_expiring": "⚠️ Premium истекает через {days} дней! Обновите.",
-      
+        "enter_code":       "🎬 Введите код понравившегося фильма:",
         "contact_admin":    "📞 Связаться с админом",
     },
     "en": {
@@ -112,7 +113,7 @@ TEXTS = {
         "already_premium":  "✅ You already have Premium!\n📅 Expires: {expires}",
         "profile":          "👤 <b>Profile</b>\n\n🆔 ID: <code>{user_id}</code>\n💎 Premium: {status}\n📅 Expires: {expires}",
         "premium_expiring": "⚠️ Premium expires in {days} days! Please renew.",
-      
+        "enter_code":       "🎬 Enter the code of your favorite movie:",
         "contact_admin":    "📞 Contact admin",
     },
 }
@@ -570,6 +571,79 @@ async def broadcast_text(message: Message, state: FSMContext):
 async def broadcast_cancel(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.edit_text("❌ E'lon bekor qilindi.")
+    await call.answer()
+
+# ✅ E'lon turi tanlash
+@dp.callback_query(F.data.startswith("broadcast_type:"))
+async def broadcast_type_selected(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    btype = call.data.split(":")[1]
+    await state.update_data(broadcast_type=btype)
+    if btype == "movie":
+        await state.set_state(Broadcast.waiting_content)
+        await call.message.edit_text(
+            "🎬 Kino e'loni uchun:
+
+'Rasm yoki qisqa video yuboriring, caption yozing.'"
+        )
+    else:
+        await state.set_state(Broadcast.waiting_content)
+        await call.message.edit_text(
+            "🛍️ Mahsulot e'loni uchun:
+
+Matn, rasm yoki video yuboriring."
+        )
+    await call.answer()
+
+# ✅ Kino e'lonida - kino kodini so'rash
+@dp.callback_query(F.data == "broadcast_ask_code")
+async def broadcast_ask_code(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Broadcast.waiting_code)
+    await call.message.edit_text("🎬 Qaysi kinoni e'lon qilmoqchisiz? Kino kodini kiriting:")
+    await call.answer()
+
+# ✅ Kino kodi kiritilganda
+@dp.message(Broadcast.waiting_code, F.text)
+async def broadcast_movie_code(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    code = message.text.strip()
+    row = await db_get_movie(code)
+    if not row:
+        await message.answer("❌ Bunday kod topilmadi. Qaytadan kiriting:")
+        return
+    _, caption, file_id = row
+    await state.update_data(movie_code=code, movie_caption=caption, movie_file_id=file_id)
+    await state.set_state(Broadcast.confirm)
+    await message.answer(
+        f"✅ Kino topildi! Kod: {code}
+
+Barcha foydalanuvchilarga e'lon + 'Filmni ko'rish' tugmasi bilan yuboriladmi?",
+        reply_markup=broadcast_confirm_kb()
+    )
+
+# ✅ Filmni ko'rish tugmasi bosilganda
+@dp.callback_query(F.data.startswith("watch:"))
+async def watch_movie_callback(call: CallbackQuery):
+    user_id = call.from_user.id
+    code = call.data.split(":")[1]
+    lang = await get_user_lang(user_id)
+    if not await is_premium(user_id):
+        if not await check_subscription(user_id):
+            await call.answer(t(lang, "subscribe"), show_alert=True)
+            return
+    row = await db_get_movie(code)
+    if not row:
+        await call.answer(t(lang, "not_found"), show_alert=True)
+        return
+    _, caption, file_id = row
+    await log_usage(user_id, code)
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await bot.send_video(chat_id=user_id, video=file_id, caption=caption or "", protect_content=True)
     await call.answer()
 
 @dp.callback_query(F.data == "broadcast_send")
